@@ -5,48 +5,43 @@ define('version', '2.0.3');
 mb_internal_encoding('UTF-8');
 
 class wCMS {
-	public static $loggedIn = false;
-	public static $currentPage;
-	public static $currentPageExists = false;
-	public static $_listeners = [];
-	public static $db = false;
+    public static $repository = false, $theme = false, $curTheme = false, $currentPage = false, $db = false, $currentPageExists = false, $loggedIn = false, $_listeners = [];
 	public static function _updateOtherFiles() {
 		$olddb = wCMS::db();
-		if ( ! isset($olddb->{'config'}->{'dbVersion'})) {
-			if (file_exists(__DIR__ . '/themes/default/theme.php')) file_put_contents(__DIR__ . '/themes/default/theme.php', file_get_contents('https://raw.githubusercontent.com/robiso/wondercms/master/themes/default/theme.php'));
-			if (file_exists(__DIR__ . '/themes/default/css/style.css')) file_put_contents(__DIR__ . '/themes/default/css/style.css', file_get_contents('https://raw.githubusercontent.com/robiso/wondercms/master/themes/default/css/style.css'));
-			if (file_exists('.htaccess')) file_put_contents('.htaccess', file_get_contents('https://raw.githubusercontent.com/robiso/wondercms/master/.htaccess'));
-			unlink('database.js');
-			wCMS::_createDatabase();
-			$newdb = wCMS::db();
-			$newdb->{'config'}->{'siteTitle'} = $olddb->{'config'}->{'siteTitle'};
-			$newdb->{'config'}->{'theme'} = 'default';
-			$newdb->{'config'}->{'defaultPage'} = $olddb->{'config'}->{'defaultPage'};
-			$newdb->{'config'}->{'login'} = $olddb->{'config'}->{'login'};
-			$newdb->{'config'}->{'password'} = $olddb->{'config'}->{'password'};
-			$newdb->{'config'}->{'menuItems'} = $olddb->{'config'}->{'menuItems'};
-			$newdb->{'pages'} = $olddb->{'pages'};
-			$newdb->{'blocks'}->{'subside'}->{'content'} = $olddb->{'config'}->{'subside'};
-			$newdb->{'blocks'}->{'footer'}->{'content'} = $olddb->{'config'}->{'copyright'};
+		if ( ! isset($olddb->config->dbVersion)) {
+			unlink('database.js');wCMS::_createDatabase();
+			$newdb=wCMS::db();
+            if (file_exists(wCMS::$curTheme.'theme.php')) file_put_contents(wCMS::$curTheme.'theme.php', wCMS::_getExternalFile(wCMS::$repository.'themes/default/theme.php'));
+            if (file_exists(wCMS::$curTheme.'css/style.css')) file_put_contents(wCMS::$curTheme.'css/style.css', wCMS::_getExternalFile(wCMS::$repository.'themes/default/css/style.css'));
+            if (file_exists('.htaccess')) file_put_contents('.htaccess', wCMS::_getExternalFile(wCMS::$repository.'/.htaccess'));
+			$newdb->config->siteTitle = $olddb->config->siteTitle;
+			$newdb->config->theme = 'default';
+			$newdb->config->defaultPage = $olddb->config->defaultPage;
+			$newdb->config->login = $olddb->config->login;
+			$newdb->config->password = $olddb->config->password;
+			$newdb->config->menuItems = $olddb->config->menuItems;
+			$newdb->pages = $olddb->pages;
+			$newdb->blocks->subside->content = $olddb->config->subside;
+			$newdb->blocks->footer->content = $olddb->config->copyright;
 			wCMS::save($newdb);
 		}
 		if($olddb->config->dbVersion < "2.1.0"){
 		    $newMenu = new stdClass(); $i=0;
             foreach ($olddb->config->menuItems as $oldMenu){$newMenu->{$i}=new stdClass;$newMenu->{$i}->name = $oldMenu;$newMenu->{$i}->slug = wCMS::_slugify($oldMenu);$newMenu->{$i}->visibility = "show";$i++;}
-            unset($olddb->config->menuItems);$olddb->config->menuItems = $newMenu;$olddb->config->dbVersion = "2.1.0";wCMS::save($olddb);
+            unset($olddb->config->menuItems);$olddb->config->menuItems = $newMenu;$olddb->config->dbVersion = "2.1.0";
+            wCMS::set('config','repository','https://raw.githubusercontent.com/robiso/wondercms/master/');wCMS::set('config','themePath',__DIR__.'/themes/');wCMS::save($olddb);
         }
 	}
 	public static function init() {
-		wCMS::_loadPlugins();
-		wCMS::_createDatabase();
-		wCMS::_updateOtherFiles();
+        wCMS::$repository=wCMS::get('config','repository');wCMS::$theme=wCMS::get('config','theme');wCMS::$curTheme=wCMS::get('config','themePath').wCMS::$theme;
+		wCMS::_loadPlugins();wCMS::_createDatabase();wCMS::_updateOtherFiles();
 		if (isset($_SESSION['l'], $_SESSION['i']) && $_SESSION['i'] == __DIR__) wCMS::$loggedIn = true;
 		wCMS::$currentPage = empty(wCMS::parseUrl()) ? wCMS::get('config','defaultPage') : wCMS::parseUrl();
 		if (isset(wCMS::get('pages')->{wCMS::$currentPage})) wCMS::$currentPageExists = true;
 		wCMS::_logoutAction(); wCMS::_loginAction(); wCMS::_saveAction(); wCMS::_changePasswordAction(); wCMS::_deleteAction(); wCMS::_upgradeAction(); wCMS::_notify();
 		if ( ! wCMS::$loggedIn && ! wCMS::$currentPageExists) header("HTTP/1.0 404 Not Found");
-		if (file_exists(__DIR__ . '/themes/' . wCMS::get('config','theme') . '/functions.php')) require_once __DIR__ . '/themes/' . wCMS::get('config','theme') . '/functions.php';
-		require_once __DIR__ . '/themes/' . wCMS::get('config','theme') . '/theme.php';
+		if (file_exists(wCMS::$curTheme.'/functions.php')) require_once wCMS::$curTheme.'/functions.php';
+		require_once wCMS::$curTheme.'/theme.php';
 	}
 	public static function editable($id, $content, $dataTarget = '') {
 		return '<div' . ($dataTarget != '' ? ' data-target="' . $dataTarget . '"' : '') . ' id="' . $id . '" class="editText editable">' . $content . '</div>';
@@ -76,8 +71,7 @@ class wCMS {
 	}
 	public static function alerts() {
 		if ( ! isset($_SESSION['alert'])) return;
-		$session = $_SESSION['alert'];
-		$output = '';
+		$session = $_SESSION['alert'];$output = '';
 		unset($_SESSION['alert']);
 		foreach ($session as $key => $value) foreach ($value as $key => $val) $output .= '<div style="margin-bottom:0" class="alert alert-'.$val['class'].( ! $val['sticky'] ? ' alert-dismissible' : '').'">'.( ! $val['sticky'] ? '<button type="button" class="close" data-dismiss="alert">&times;</button>' : '').$val['message'].'</div>';
 		return $output;
@@ -90,10 +84,10 @@ class wCMS {
 		header('Location: '.wCMS::url($location)); die();
 	}
 	public static function asset($location) {
-		return wCMS::url('themes/' . wCMS::get('config','theme') . '/' . $location);
+		return wCMS::url('themes/'.wCMS::$theme.'/'.$location);
 	}
 	public static function url($location = '') {
-		return 'http' . (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] == 'on' ? 's' : '') . '://' . $_SERVER['HTTP_HOST'] . '/' . $location; //str_replace($_SERVER['DOCUMENT_ROOT'], '', str_replace('\\', '/', __DIR__)) .
+        return './' . $location;
 	}
 	public static function parseUrl() {
 		if ($_GET['page'] == wCMS::get('config','login')) return htmlentities($_GET['page'], ENT_QUOTES, 'UTF-8');
@@ -132,9 +126,7 @@ class wCMS {
 	public static function addListener($hook, $functionName, $priority = 10) {
         $priority_existed = isset(wCMS::$_listeners[$hook][$priority]);
         wCMS::$_listeners[$hook][$priority][] = $functionName;
-        if (!$priority_existed && count(wCMS::$_listeners[$hook]) > 1) {
-            ksort(wCMS::$_listeners[$hook], SORT_NUMERIC);
-        }
+        if (!$priority_existed && count(wCMS::$_listeners[$hook]) > 1) ksort(wCMS::$_listeners[$hook], SORT_NUMERIC);
 	}
 	public static function getMenuSettings(){
         if ( ! wCMS::$loggedIn) return;
@@ -150,11 +142,11 @@ class wCMS {
         return wCMS::_hook('getMenuSettings', $output)[0];
     }
 	public static function settings() {
-		if ( ! wCMS::$loggedIn) return;
+		if ( ! wCMS::$loggedIn) return;$github='https://github.com/robiso/';
 		$output ='<div id="save"><h2>Saving...</h2></div><div id="adminPanel" class="container-fluid"><div class="padding20 toggle text-center" data-toggle="collapse" data-target="#settings">Settings</div><div class="col-xs-12 col-sm-8 col-sm-offset-2"><div id="settings" class="collapse">';
 		if (wCMS::$currentPageExists) $output .= '<p class="fontSize24">Current page (' . wCMS::$currentPage . ') settings</p><div class="change"><p class="subTitle">Page title</p><div class="change"><div data-target="pages" id="title" class="editText">' . (wCMS::get('pages',wCMS::$currentPage)->title != '' ? wCMS::get('pages',wCMS::$currentPage)->title : '') . '</div></div><p class="subTitle">Page keywords</p><div class="change"><div data-target="pages" id="keywords" class="editText">' . (wCMS::get('pages',wCMS::$currentPage)->keywords != '' ? wCMS::get('pages',wCMS::$currentPage)->keywords : '') . '</div></div><p class="subTitle">Page description</p><div class="change"><div data-target="pages" id="description" class="editText">' . (wCMS::get('pages',wCMS::$currentPage)->description != '' ? wCMS::get('pages',wCMS::$currentPage)->description : '') . '</div></div><a href="' . wCMS::url('?delete=' . wCMS::$currentPage) . '" class="btn btn-danger marginTop20" onclick="return confirm(\'Really delete page?\')">Delete current page</a></div>';
-		$output .= '<p class="text-right marginTop20"><small>WonderCMS '. version . ' &bull; <a href="https://github.com/robiso/wondercms-themes">Themes</a> &bull; <a href="https://github.com/robiso/wondercms-plugins">Plugins</a> &bull; <a href="https://www.wondercms.com/forum">Community</a> &bull; <a href="https://github.com/robiso/wondercms/wiki">Documentation</a> &bull; <a href="https://www.wondercms.com/donate">Donate</a></small></p><p class="fontSize24">General settings</p><div class="change"><div class="form-group"><select class="form-control" name="themeSelect" onchange="fieldSave(\'theme\',this.value,\'config\');">';
-		foreach (glob(__DIR__ . '/themes/*', GLOB_ONLYDIR) as $dir) $output .= '<option value="' . basename($dir) . '"' . (basename($dir) == wCMS::get('config','theme') ? ' selected' : '') . '>' . basename($dir) . ' theme'.'</option>';
+		$output .= '<p class="text-right marginTop20"><small>WonderCMS '. version . ' &bull; <a href="'.$github.'wondercms-themes">Themes</a> &bull; <a href="'.$github.'wondercms-plugins">Plugins</a> &bull; <a href="https://www.wondercms.com/forum">Community</a> &bull; <a href="'.$github.'wondercms/wiki">Documentation</a> &bull; <a href="https://www.wondercms.com/donate">Donate</a></small></p><p class="fontSize24">General settings</p><div class="change"><div class="form-group"><select class="form-control" name="themeSelect" onchange="fieldSave(\'theme\',this.value,\'config\');">';
+		foreach (glob(__DIR__ . '/themes/*', GLOB_ONLYDIR) as $dir) $output .= '<option value="' . basename($dir) . '"' . (basename($dir) == wCMS::$theme ? ' selected' : '') . '>' . basename($dir) . ' theme'.'</option>';
 		$output .= '</select></div><p class="subTitle">Main website title</p><div class="change"><div data-target="config" id="siteTitle" class="editText">' . (wCMS::get('config','siteTitle') != '' ? wCMS::get('config','siteTitle') : '') . '</div></div>';
         $output .= wCMS::getMenuSettings();
         $output .= '<p class="subTitle">Footer</p><div class="change"><div data-target="blocks" id="footer" class="editText">' . (wCMS::get('blocks','footer')->content != '' ? wCMS::get('blocks','footer')->content : '') . '</div></div>';
@@ -208,7 +200,7 @@ EOT;
 		if ($fieldname === 'defaultPage') if ( ! isset(wCMS::get('pages')->$content)) return;
 		if ($fieldname === 'login') if (empty($content) || isset(wCMS::get('pages')->$content)) return;
 		if ($fieldname === 'theme') if ( ! is_dir(__DIR__ . '/themes/' . $content)) return;
-		if ($target === 'config') wCMS::set('config',$fieldname,$content); elseif ($target === 'blocks') wCMS::set('blocks',$fieldname,'content',$content); elseif ($target === 'pages') { if ( ! isset(wCMS::get('pages')->{wCMS::$currentPage})) wCMS::_createPage(); wCMS::set('pages',wCMS::$currentPage,$fieldname,$content); }
+		if ($target === 'config')wCMS::set('config',$fieldname,$content); elseif ($target === 'blocks') wCMS::set('blocks',$fieldname,'content',$content); elseif ($target === 'pages') { if ( ! isset(wCMS::get('pages')->{wCMS::$currentPage})) wCMS::_createPage(); wCMS::set('pages',wCMS::$currentPage,$fieldname,$content); }
 	}
 	public static function _generateToken(){
 		return $_SESSION["token"] = bin2hex(openssl_random_pseudo_bytes(32));
@@ -226,12 +218,12 @@ EOT;
 		if(!$needle){if (!wCMS::$loggedIn || !isset($_GET['delete'])) return;$needle=$_GET['delete'];}$db=wCMS::db();
 		if (isset(wCMS::get('pages')->{$needle})) unset($db->pages->{$needle});
 		if($menu) {$menuItems = json_decode(json_encode(wCMS::get('config', 'menuItems')), TRUE);
-            if (false === ($index = array_search($needle, array_column($menuItems, "slug")))) return;unset($menuItems[$index]);$newMenu=array_values($menuItems);$db->config->menuItems = json_decode(json_encode($newMenu));}
+		if (false === ($index = array_search($needle, array_column($menuItems, "slug")))) return;unset($menuItems[$index]);$newMenu=array_values($menuItems);$db->config->menuItems = json_decode(json_encode($newMenu));}
         wCMS::save($db); wCMS::redirect();
 	}
 	public static function _upgradeAction() {
 		if ( ! wCMS::$loggedIn || ! isset($_POST['upgrade'])) return;
-		$contents = file_get_contents('https://raw.githubusercontent.com/robiso/wondercms/master/index.php');
+		$contents = wCMS::_getExternalFile(wCMS::$repository.'index.php');
 		if ($contents) {
 			file_put_contents(__FILE__, $contents);
 			wCMS::alert('success', 'WonderCMS successfully updated. Wohoo!'); wCMS::redirect(wCMS::$currentPage);
@@ -247,9 +239,16 @@ EOT;
 		if ( ! wCMS::$loggedIn) return;
 		if ( ! wCMS::$currentPageExists) wCMS::alert('info', '<b>This page (' . wCMS::$currentPage . ') doesn\'t exist yet.</b> Click inside the content below and make your first edit to create it.');
 		if (wCMS::get('config','login') === 'loginURL') wCMS::alert('warning', 'Change your default login URL and bookmark/save it.', true); if (password_verify('admin', wCMS::get('config','password'))) wCMS::alert('danger', 'Change your default password.', true);
-		if ( ! isset($_SESSION['u'])) {$_SESSION['u'] = true; {if (trim(file_get_contents('https://raw.githubusercontent.com/robiso/wondercms/master/version')) != version) {
-			wCMS::alert('info', '<b>Your WonderCMS version is out of date.</b> <form style="display:inline" action="" method="post"><button class="btn btn-info" name="upgrade">Update WonderCMS</button></form><p>Before updating:</p><p>- <a href="https://github.com/robiso/wondercms/wiki/Backup-all-files" target="_blank">backup all files</a></p><p>- <a href="https://www.wondercms.com/whatsnew" target="_blank">check what\'s new</a></p>', true);};}}
+        if ( ! isset($_SESSION['u'])) {$_SESSION['u'] = true; {$repo_version = wCMS::_getOfficialVersion(); if ($repo_version != version) {
+            wCMS::alert('info', '<b>Your WonderCMS version is out of date.</b><br />Your version: ' . version . ' | New Version: ' . $repo_version . '<br /><form style="display:inline" action="" method="post"><button class="btn btn-info" name="upgrade">Update WonderCMS</button></form><p>Before updating:</p><p>- <a href="https://github.com/robiso/wondercms/wiki/Backup-all-files" target="_blank">backup all files</a></p><p>- <a href="https://www.wondercms.com/whatsnew" target="_blank">check what\'s new</a></p>', true);};}}
 	}
+    private static function _getOfficialVersion() {
+        $data = trim(wCMS::_getExternalFile(wCMS::$repository.'version')); return $data;
+ 	}
+	public static function _getExternalFile($url) {
+        $ch = curl_init(); curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1); curl_setopt($ch, CURLOPT_URL, $url);
+        $data = curl_exec($ch); curl_close($ch); return $data;
+    }
 	public static function _loadPlugins() {
 		if ( ! is_dir(__DIR__ . '/plugins')) mkdir(__DIR__ . '/plugins');
 		foreach (glob(__DIR__ . '/plugins/*', GLOB_ONLYDIR) as $dir) if (file_exists($dir . '/' . basename($dir) . '.php')) include $dir . '/' . basename($dir) . '.php';
@@ -276,8 +275,10 @@ EOT;
 		wCMS::save([
 			'config' => [
 				'dbVersion' => '2.1.0',
+				'repository' => 'https://raw.githubusercontent.com/robiso/wondercms/master/',
 				'siteTitle' => 'Website title',
 				'theme' => 'default',
+				'themePath' => __DIR__.'/themes/',
 				'defaultPage' => 'home',
 				'login' => 'loginURL',
 				'password' => password_hash('admin', PASSWORD_DEFAULT),
